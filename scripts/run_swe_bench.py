@@ -26,7 +26,7 @@ TRAJ_DIR = os.path.join(ROOT_DIR, "data", "swebench_verified_trajs")
 
 sys.path.insert(0, SCRIPT_DIR)
 from verifier_core import (
-    create_gemini_client,
+    create_deepseek_client,
     evaluate_and_print,
     load_dotenv,
     score_all_trials,
@@ -328,7 +328,7 @@ def main():
     print(f"  Instances: {n_tasks}  All-pass: {len(all_pass)}  "
           f"All-fail: {len(all_fail)}  Swing: {len(swing)}")
 
-    client = create_gemini_client()
+    client = create_deepseek_client()
 
     cache_file = args.cache or os.path.join(
         ROOT_DIR, "cache", "cache_swebench.json")

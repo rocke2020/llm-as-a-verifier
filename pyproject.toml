@@ -1,0 +1,10 @@
+[project]
+name = "llm-as-a-verifier"
+version = "0.1.0"
+description = "LLM-as-a-Verifier: general-purpose verification framework"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.0",
+    "tqdm",
+    "httpx[socks]",
+]

@@ -2,7 +2,7 @@
 Shared verifier infrastructure for Terminal-Bench and SWE-bench Verified experiments.
 
 Provides:
-  - Gemini 2.5 Flash client + logprob-based call
+  - DeepSeek V4 Flash client + logprob-based call (OpenAI-compatible API)
   - g=20 scoring granularity
   - Per-criterion pairwise prompt + score extraction
   - Round-robin tournament best-traj selection
@@ -45,7 +45,7 @@ SCALE = {
 
 
 # ---------------------------------------------------------------------------
-# Gemini client
+# DeepSeek client (OpenAI-compatible API)
 # ---------------------------------------------------------------------------
 
 def load_dotenv(root_dir):
@@ -58,51 +58,41 @@ def load_dotenv(root_dir):
                 os.environ.setdefault(k.strip(), v.strip())
 
 
-def create_gemini_client():
-    from google import genai
-    vertex_key = os.environ.get("VERTEX_API_KEY")
-    if vertex_key:
-        return genai.Client(vertexai=True, api_key=vertex_key)
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if api_key:
-        return genai.Client(api_key=api_key)
-    print("Error: set GEMINI_API_KEY or VERTEX_API_KEY in .env or environment")
-    sys.exit(1)
+def create_deepseek_client():
+    from openai import OpenAI
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    if not api_key:
+        print("Error: set DEEPSEEK_API_KEY in .env or environment")
+        sys.exit(1)
+    return OpenAI(api_key=api_key, base_url=base_url)
 
 
-def call_gemini(client, prompt, top_logprobs=20):
-    """Call Gemini 2.5 Flash with logprobs.
+def call_deepseek(client, prompt, top_logprobs=20):
+    """Call DeepSeek V4 Flash with logprobs via OpenAI-compatible API.
     Returns (text, tokens, position_logprobs)."""
-    from google.genai.types import (
-        Content, GenerateContentConfig, Part, ThinkingConfig)
-
-    config = GenerateContentConfig(
-        max_output_tokens=4096,
+    response = client.chat.completions.create(
+        model="deepseek-v4-flash",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=4096,
         temperature=1.0,
-        response_logprobs=True,
-        logprobs=top_logprobs,
-        thinking_config=ThinkingConfig(thinking_budget=0),
+        logprobs=True,
+        top_logprobs=top_logprobs,
     )
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[Content(role="user", parts=[Part(text=prompt)])],
-        config=config,
-    )
-
-    text = response.text or ""
+    text = response.choices[0].message.content or ""
     tokens = None
     position_logprobs = None
 
-    candidate = response.candidates[0]
-    if candidate.logprobs_result and candidate.logprobs_result.top_candidates:
+    logprobs_content = response.choices[0].logprobs
+    if logprobs_content and logprobs_content.content:
+        tokens = []
         position_logprobs = []
-        for pos in candidate.logprobs_result.top_candidates:
-            alts = [(lp.token, lp.log_probability)
-                    for lp in pos.candidates]
+        for token_info in logprobs_content.content:
+            tokens.append(token_info.token)
+            alts = [(alt.token, alt.logprob)
+                    for alt in (token_info.top_logprobs or [])]
             position_logprobs.append(alts)
-        if candidate.logprobs_result.chosen_candidates:
-            tokens = [c.token for c in candidate.logprobs_result.chosen_candidates]
 
     return text, tokens, position_logprobs
 
@@ -200,7 +190,7 @@ def score_pair_criterion(client, problem, trace_a, trace_b, criterion,
     """Score (A, B) for a single criterion."""
     prompt = create_prompt_for_criterion(
         problem, trace_a, trace_b, criterion, ground_truth_note)
-    text, tokens, position_logprobs = call_gemini(client, prompt)
+    text, tokens, position_logprobs = call_deepseek(client, prompt)
     sa = extract_score(text, tokens, position_logprobs, "<score_A>")
     sb = extract_score(text, tokens, position_logprobs, "<score_B>")
     return sa, sb
