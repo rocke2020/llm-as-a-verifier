@@ -4,14 +4,17 @@ LLM-as-a-Verifier is a general-purpose verification framework that provides fine
 
 ## Setup
 
+The original implementation used Google Gemini 2.5 Flash via the `google-genai` SDK. This repo has been updated to use **DeepSeek V4 Flash** via the OpenAI-compatible API.
+
 ```bash
-pip install google-genai tqdm
+uv venv && uv sync
 ```
 
-Create a `.env` file with your Vertex AI API key (required for logprob extraction):
+Create a `.env` file with your DeepSeek API key:
 
 ```bash
-echo "VERTEX_API_KEY=your_key_here" > .env
+echo "DEEPSEEK_API_KEY=your_key_here" > .env
+echo "DEEPSEEK_BASE_URL=https://api.deepseek.com" >> .env
 ```
 
 ## Directory Structure
@@ -21,7 +24,7 @@ echo "VERTEX_API_KEY=your_key_here" > .env
   README.md
   .env                          # API key (create this)
   scripts/
-    verifier_core.py            # Gemini setup + scoring
+    verifier_core.py            # DeepSeek setup + scoring
     run_terminal_bench.py       # Terminal-Bench Evaluation
     run_swe_bench.py            # SWE-bench Verified Evaluation
   data/

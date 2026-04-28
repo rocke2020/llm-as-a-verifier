@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.DS_Store
+# Generated data caches — each skill manages its own runtime state
+# (see .claude/skills/<skill>/.gitignore)
+
+# Eval results — track summaries and snapshots, exclude ephemeral case outputs
+/cache
+# gstack session files
+.gstack/
+/runs
