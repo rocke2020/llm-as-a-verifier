@@ -70,7 +70,28 @@ def create_deepseek_client():
 
 def call_deepseek(client, prompt, top_logprobs=20):
     """Call DeepSeek V4 Flash with logprobs via OpenAI-compatible API.
-    Returns (text, tokens, position_logprobs)."""
+
+    Returns:
+        (text, tokens, position_logprobs) where:
+        - text: str — the full response text
+          e.g. "Based on my analysis...\n<score_A>B</score_A>\n<score_B>M</score_B>"
+        - tokens: list[str] | None — each chosen token in generation order
+          e.g. ["Based", " on", " my", " analysis", "...", "\n", "<", "score",
+                "_", "A", ">", "B", "</", "score", "_", "A", ">", ...]
+        - position_logprobs: list[list[tuple[str, float]]] | None —
+          for each token position, a list of (token, log_probability) tuples
+          representing the top alternatives at that position.
+          e.g. [
+              [("Based", -0.12), ("After", -2.5), ("The", -3.1), ...],  # pos 0
+              [(" on", -0.05), (" upon", -3.8), ...],                    # pos 1
+              ...
+              [("B", -0.8), ("A", -1.2), ("C", -1.9), ("D", -2.3), ...],  # score token
+              ...
+          ]
+          The score extraction logic searches tokens for a tag like "<score_A>"
+          then reads position_logprobs at the next position to get the probability
+          distribution over score letters (A-T).
+    """
     response = client.chat.completions.create(
         model="deepseek-v4-flash",
         messages=[{"role": "user", "content": prompt}],
@@ -114,7 +135,46 @@ def _find_tag_logprobs(tokens, position_logprobs, tag):
 
 
 def extract_score(text, tokens, position_logprobs, tag):
-    """Extract normalized [0,1] score from logprobs at the given tag."""
+    """Extract a normalized [0,1] score from logprobs at the given XML tag.
+
+    Uses two strategies in order:
+      1. Logprob-based (primary): find the token position right after `tag`
+         in the token stream, collect probabilities for valid score letters
+         (A-T), and compute a probability-weighted expected value.
+      2. Text-based (fallback): regex-parse the score letter from the
+         response text between matching XML tags.
+
+    Args:
+        text: str — full response text from the model.
+            e.g. "Analysis...\n<score_A>B</score_A>\n<score_B>M</score_B>"
+        tokens: list[str] | None — tokenized output from the model.
+            e.g. ["Analysis", "...", "\n", "<", "score", "_", "A", ">", "B",
+                   "</", "score", "_", "A", ">", "\n", "<", "score", "_", "B",
+                   ">", "M", "</", "score", "_", "B", ">"]
+        position_logprobs: list[list[tuple[str, float]]] | None —
+            per-position top-k alternatives with log probabilities.
+            At the position after "<score_A>" (i.e. where "B" appears):
+                [("B", -0.8), ("A", -1.2), ("C", -1.9), ("D", -2.3), ...]
+            At the position after "<score_B>" (i.e. where "M" appears):
+                [("M", -0.5), ("N", -1.1), ("L", -1.7), ...]
+        tag: str — the XML tag to locate, e.g. "<score_A>" or "<score_B>".
+
+    Returns:
+        float in [0, 1] — normalized score where 1.0 = best (letter A,
+        raw value 20) and 0.0 = worst (letter T, raw value 1).
+        Returns 0.5 if neither logprobs nor text parsing yields a result.
+
+    Example:
+        # Logprob path: if top_logprobs at the score position are
+        #   [("B", -0.8), ("C", -1.9), ("A", -1.2)]
+        # then probs = {19: exp(-0.8), 18: exp(-1.9), 20: exp(-1.2)}
+        # expected = weighted_avg ≈ 19.1, normalized = (19.1 - 1) / 19 ≈ 0.95
+        score = extract_score(text, tokens, position_logprobs, "<score_A>")
+
+        # Fallback path: if logprobs are None, parses "<score_A>B</score_A>"
+        # from text, maps "B" → raw 19, normalized = (19 - 1) / 19 ≈ 0.947
+        score = extract_score(text, None, None, "<score_A>")
+    """
     valid_tokens = SCALE["valid_tokens"]
 
     tag_lp = _find_tag_logprobs(tokens, position_logprobs, tag)
